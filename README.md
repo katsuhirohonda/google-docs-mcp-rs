@@ -4,7 +4,6 @@ A Rust-based Model Context Protocol (MCP) server for Google Docs API integration
 
 ## Features
 
-- **Create Documents**: Create new Google Documents with optional initial content
 - **Read Documents**: Retrieve document content and metadata
 - **Update Documents**: Modify documents with insert, delete, and replace operations
 - **Service Account Auth**: Secure authentication using Google Service Account credentials
@@ -13,9 +12,8 @@ A Rust-based Model Context Protocol (MCP) server for Google Docs API integration
 
 1. A Google Cloud Project
 2. Google Docs API enabled
-3. Google Drive API enabled (required for creating documents in specific folders)
-4. A Service Account with appropriate permissions
-5. Service Account JSON key file
+3. A Service Account with appropriate permissions
+4. Service Account JSON key file
 
 ## Setup
 
@@ -23,7 +21,9 @@ A Rust-based Model Context Protocol (MCP) server for Google Docs API integration
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create or select a project
-3. Enable the Google Docs API
+3. Enable the Google Docs API:
+   - Go to **APIs & Services** > **Library**
+   - Search for and enable **Google Docs API**
 4. Go to **IAM & Admin** > **Service Accounts**
 5. Create a new service account
 6. Download the JSON key file
@@ -74,15 +74,6 @@ Add to your Claude Code MCP settings:
 ```
 
 ## Tools
-
-### google_docs_create_document
-
-Create a new Google Document.
-
-**Parameters:**
-- `title` (required): Document title
-- `initial_content` (optional): Initial text content
-- `response_format` (optional): "markdown" (default) or "json"
 
 ### google_docs_get_document
 
