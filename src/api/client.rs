@@ -1,7 +1,11 @@
-use crate::constants::{GOOGLE_DOCS_API_URL, GOOGLE_DOCS_SCOPE, GOOGLE_TOKEN_URL, JWT_EXPIRATION_SECS};
+use crate::constants::{
+    GOOGLE_DOCS_API_URL, GOOGLE_DOCS_MIME_TYPE, GOOGLE_DOCS_SCOPE, GOOGLE_DRIVE_API_URL,
+    GOOGLE_DRIVE_SCOPE, GOOGLE_TOKEN_URL, JWT_EXPIRATION_SECS,
+};
 use crate::models::{
     BatchUpdateRequest, BatchUpdateResponse, CreateDocumentRequest, Document,
-    GoogleDocsRequest, ServiceAccountCredentials, TokenResponse,
+    DriveCreateFileRequest, DriveFile, GoogleDocsRequest, ServiceAccountCredentials,
+    TokenResponse,
 };
 use chrono::Utc;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
@@ -108,9 +112,12 @@ impl GoogleDocsClient {
         let now = Utc::now().timestamp();
         let exp = now + JWT_EXPIRATION_SECS;
 
+        // Request both Docs and Drive scopes
+        let scopes = format!("{} {}", GOOGLE_DOCS_SCOPE, GOOGLE_DRIVE_SCOPE);
+
         let claims = JwtClaims {
             iss: self.credentials.client_email.clone(),
-            scope: GOOGLE_DOCS_SCOPE.to_string(),
+            scope: scopes,
             aud: GOOGLE_TOKEN_URL.to_string(),
             iat: now,
             exp,
@@ -191,6 +198,33 @@ impl GoogleDocsClient {
             .client
             .get(format!("{}/documents/{}", GOOGLE_DOCS_API_URL, document_id))
             .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .map_err(handle_api_error)?;
+
+        handle_response(response).await
+    }
+
+    /// Create a new Google Document in a specific folder using Drive API
+    pub async fn create_document_in_folder(
+        &self,
+        title: &str,
+        folder_id: &str,
+    ) -> Result<DriveFile, McpError> {
+        let token = self.get_access_token().await?;
+
+        let request_body = DriveCreateFileRequest {
+            name: title.to_string(),
+            mime_type: GOOGLE_DOCS_MIME_TYPE.to_string(),
+            parents: Some(vec![folder_id.to_string()]),
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/files", GOOGLE_DRIVE_API_URL))
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
             .send()
             .await
             .map_err(handle_api_error)?;

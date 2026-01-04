@@ -141,6 +141,35 @@ pub struct CreateDocumentRequest {
     pub title: String,
 }
 
+// =============================================================================
+// Google Drive API Request/Response Models
+// =============================================================================
+
+/// Request body for creating a file via Drive API
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveCreateFileRequest {
+    /// The name of the file
+    pub name: String,
+    /// The MIME type of the file
+    pub mime_type: String,
+    /// Parent folder IDs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parents: Option<Vec<String>>,
+}
+
+/// Response from Drive API file creation
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveFile {
+    /// The file ID
+    pub id: String,
+    /// The file name
+    pub name: String,
+    /// The MIME type
+    pub mime_type: String,
+}
+
 /// Request body for batch updating a document
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -587,6 +616,64 @@ mod tests {
         // Then: replies should default to empty vector
         assert_eq!(response.document_id, "doc456");
         assert!(response.replies.is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // Google Drive API Models Tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn drive_create_file_request_serializes_with_parents() {
+        // Given: A Drive API create file request with parents
+        let request = DriveCreateFileRequest {
+            name: "Test Document".to_string(),
+            mime_type: "application/vnd.google-apps.document".to_string(),
+            parents: Some(vec!["folder123".to_string()]),
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_value(&request).unwrap();
+
+        // Then: Fields should be camelCase and parents should be an array
+        assert_eq!(json["name"], "Test Document");
+        assert_eq!(json["mimeType"], "application/vnd.google-apps.document");
+        assert_eq!(json["parents"][0], "folder123");
+    }
+
+    #[test]
+    fn drive_create_file_request_omits_parents_when_none() {
+        // Given: A Drive API create file request without parents
+        let request = DriveCreateFileRequest {
+            name: "Test Document".to_string(),
+            mime_type: "application/vnd.google-apps.document".to_string(),
+            parents: None,
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_value(&request).unwrap();
+
+        // Then: parents field should be omitted
+        assert_eq!(json["name"], "Test Document");
+        assert_eq!(json["mimeType"], "application/vnd.google-apps.document");
+        assert!(json.get("parents").is_none());
+    }
+
+    #[test]
+    fn drive_file_deserializes_from_api_response() {
+        // Given: A Drive API file response
+        let json = r#"{
+            "id": "doc123abc",
+            "name": "My Document",
+            "mimeType": "application/vnd.google-apps.document"
+        }"#;
+
+        // When: Deserializing the response
+        let file: DriveFile = serde_json::from_str(json).unwrap();
+
+        // Then: Fields should be correctly mapped from camelCase
+        assert_eq!(file.id, "doc123abc");
+        assert_eq!(file.name, "My Document");
+        assert_eq!(file.mime_type, "application/vnd.google-apps.document");
     }
 
     // -------------------------------------------------------------------------

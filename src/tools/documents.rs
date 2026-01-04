@@ -28,6 +28,9 @@ pub struct CreateDocumentParams {
     /// Title of the new document
     pub title: String,
 
+    /// Optional folder ID to create the document in. If not specified, the document will be created in the root folder (My Drive).
+    pub folder_id: Option<String>,
+
     /// Optional initial content to add to the document (plain text)
     pub initial_content: Option<String>,
 
@@ -72,7 +75,27 @@ impl GoogleDocsMcpServer {
     }
 
     /// Create a new Google Document with an optional initial content.
-    #[tool(description = "Create a new Google Document. Returns the document ID and URL. You can optionally provide initial text content.")]
+    #[tool(description = r#"Create a new Google Document.
+
+## Parameters
+- `title` (string, required): Title of the document
+- `folder_id` (string, optional): Google Drive folder ID to create the document in. If not specified, creates in root folder (My Drive).
+- `initial_content` (string, optional): Initial text content to add to the document
+- `response_format` (string, optional): "markdown" (default) or "json"
+
+## Example Request
+
+```json
+{
+  "title": "My Document",
+  "folder_id": "1abc123xyz",
+  "initial_content": "Hello, World!"
+}
+```
+
+## Notes
+- To get a folder ID, look at the URL when viewing the folder in Google Drive: `https://drive.google.com/drive/folders/{folder_id}`
+- The service account must have write access to the target folder"#)]
     async fn google_docs_create_document(
         &self,
         Parameters(params): Parameters<CreateDocumentParams>,
@@ -83,40 +106,65 @@ impl GoogleDocsMcpServer {
             )]));
         }
 
-        match self.client.create_document(&params.title).await {
-            Ok(document) => {
-                // If initial content is provided, add it to the document
-                if let Some(ref content) = params.initial_content {
-                    if !content.is_empty() {
-                        let requests = vec![GoogleDocsRequest {
-                            insert_text: Some(InsertTextRequest {
-                                text: content.clone(),
-                                location: Location { index: 1 },
-                            }),
-                            delete_content_range: None,
-                            replace_all_text: None,
-                        }];
-                        if let Err(e) = self
-                            .client
-                            .batch_update(&document.document_id, requests)
-                            .await
-                        {
-                            return Ok(CallToolResult::error(vec![Content::text(format!(
-                                "Document created but failed to add content: {:?}",
-                                e
-                            ))]));
-                        }
-                    }
+        // Determine document ID based on whether folder_id is provided
+        let document_id = if let Some(ref folder_id) = params.folder_id {
+            // Use Drive API to create document in specific folder
+            match self
+                .client
+                .create_document_in_folder(&params.title, folder_id)
+                .await
+            {
+                Ok(drive_file) => drive_file.id,
+                Err(e) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "Failed to create document in folder: {:?}",
+                        e
+                    ))]));
                 }
-
-                let response = format_create_response(&document, &params.response_format);
-                Ok(CallToolResult::success(vec![Content::text(response)]))
             }
-            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Failed to create document: {:?}",
-                e
-            ))])),
+        } else {
+            // Use Docs API to create document in root folder
+            match self.client.create_document(&params.title).await {
+                Ok(document) => document.document_id,
+                Err(e) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "Failed to create document: {:?}",
+                        e
+                    ))]));
+                }
+            }
+        };
+
+        // If initial content is provided, add it to the document
+        if let Some(ref content) = params.initial_content {
+            if !content.is_empty() {
+                let requests = vec![GoogleDocsRequest {
+                    insert_text: Some(InsertTextRequest {
+                        text: content.clone(),
+                        location: Location { index: 1 },
+                    }),
+                    delete_content_range: None,
+                    replace_all_text: None,
+                }];
+                if let Err(e) = self.client.batch_update(&document_id, requests).await {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "Document created but failed to add content: {:?}",
+                        e
+                    ))]));
+                }
+            }
         }
+
+        // Build response with document info
+        let document = Document {
+            document_id: document_id.clone(),
+            title: params.title.clone(),
+            body: None,
+            revision_id: None,
+        };
+
+        let response = format_create_response(&document, &params.response_format);
+        Ok(CallToolResult::success(vec![Content::text(response)]))
     }
 
     /// Get a Google Document by its ID.
