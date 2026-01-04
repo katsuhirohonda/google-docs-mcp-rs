@@ -275,3 +275,367 @@ pub struct TokenResponse {
     /// Expiration time in seconds
     pub expires_in: i64,
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // ResponseFormat Tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn response_format_defaults_to_markdown() {
+        // Given: No explicit format specified
+        // When: Creating a default ResponseFormat
+        let format = ResponseFormat::default();
+
+        // Then: It should be Markdown
+        assert!(matches!(format, ResponseFormat::Markdown));
+    }
+
+    #[test]
+    fn response_format_serializes_to_lowercase() {
+        // Given: ResponseFormat variants
+        let markdown = ResponseFormat::Markdown;
+        let json = ResponseFormat::Json;
+
+        // When: Serializing to JSON
+        let markdown_str = serde_json::to_string(&markdown).unwrap();
+        let json_str = serde_json::to_string(&json).unwrap();
+
+        // Then: Values should be lowercase strings
+        assert_eq!(markdown_str, r#""markdown""#);
+        assert_eq!(json_str, r#""json""#);
+    }
+
+    #[test]
+    fn response_format_deserializes_from_lowercase() {
+        // Given: Lowercase JSON strings
+        let markdown_json = r#""markdown""#;
+        let json_json = r#""json""#;
+
+        // When: Deserializing from JSON
+        let markdown: ResponseFormat = serde_json::from_str(markdown_json).unwrap();
+        let json: ResponseFormat = serde_json::from_str(json_json).unwrap();
+
+        // Then: Correct variants should be created
+        assert!(matches!(markdown, ResponseFormat::Markdown));
+        assert!(matches!(json, ResponseFormat::Json));
+    }
+
+    // -------------------------------------------------------------------------
+    // DocumentRequest Tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn document_request_insert_text_serializes_correctly() {
+        // Given: An InsertText request
+        let request = DocumentRequest::InsertText {
+            text: "Hello, World!".to_string(),
+            index: 1,
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_value(&request).unwrap();
+
+        // Then: It should have snake_case format with correct fields
+        assert_eq!(json["insert_text"]["text"], "Hello, World!");
+        assert_eq!(json["insert_text"]["index"], 1);
+    }
+
+    #[test]
+    fn document_request_delete_content_range_serializes_correctly() {
+        // Given: A DeleteContentRange request
+        let request = DocumentRequest::DeleteContentRange {
+            start_index: 5,
+            end_index: 10,
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_value(&request).unwrap();
+
+        // Then: It should have correct range fields
+        assert_eq!(json["delete_content_range"]["start_index"], 5);
+        assert_eq!(json["delete_content_range"]["end_index"], 10);
+    }
+
+    #[test]
+    fn document_request_replace_all_text_serializes_correctly() {
+        // Given: A ReplaceAllText request with match_case
+        let request = DocumentRequest::ReplaceAllText {
+            find_text: "old".to_string(),
+            replace_text: "new".to_string(),
+            match_case: true,
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_value(&request).unwrap();
+
+        // Then: It should have all fields including match_case
+        assert_eq!(json["replace_all_text"]["find_text"], "old");
+        assert_eq!(json["replace_all_text"]["replace_text"], "new");
+        assert_eq!(json["replace_all_text"]["match_case"], true);
+    }
+
+    #[test]
+    fn document_request_replace_all_text_defaults_match_case_to_false() {
+        // Given: JSON without match_case field
+        let json = r#"{"replace_all_text":{"find_text":"old","replace_text":"new"}}"#;
+
+        // When: Deserializing the request
+        let request: DocumentRequest = serde_json::from_str(json).unwrap();
+
+        // Then: match_case should default to false
+        if let DocumentRequest::ReplaceAllText { match_case, .. } = request {
+            assert!(!match_case);
+        } else {
+            panic!("Expected ReplaceAllText variant");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Document Model Tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn document_deserializes_from_api_response() {
+        // Given: A Google Docs API response JSON
+        let json = r#"{
+            "documentId": "1abc123",
+            "title": "Test Document",
+            "revisionId": "rev123"
+        }"#;
+
+        // When: Deserializing the response
+        let doc: Document = serde_json::from_str(json).unwrap();
+
+        // Then: Fields should be correctly mapped from camelCase
+        assert_eq!(doc.document_id, "1abc123");
+        assert_eq!(doc.title, "Test Document");
+        assert_eq!(doc.revision_id, Some("rev123".to_string()));
+        assert!(doc.body.is_none());
+    }
+
+    #[test]
+    fn document_deserializes_with_body_content() {
+        // Given: A document with body content
+        let json = r#"{
+            "documentId": "doc123",
+            "title": "Doc with Body",
+            "body": {
+                "content": [
+                    {
+                        "startIndex": 1,
+                        "endIndex": 14,
+                        "paragraph": {
+                            "elements": [
+                                {
+                                    "startIndex": 1,
+                                    "endIndex": 14,
+                                    "textRun": {
+                                        "content": "Hello, World!"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }"#;
+
+        // When: Deserializing the document
+        let doc: Document = serde_json::from_str(json).unwrap();
+
+        // Then: Body content should be correctly parsed
+        let body = doc.body.expect("Body should exist");
+        assert_eq!(body.content.len(), 1);
+
+        let element = &body.content[0];
+        assert_eq!(element.start_index, Some(1));
+        assert_eq!(element.end_index, Some(14));
+
+        let paragraph = element.paragraph.as_ref().expect("Paragraph should exist");
+        assert_eq!(paragraph.elements.len(), 1);
+
+        let text_run = paragraph.elements[0]
+            .text_run
+            .as_ref()
+            .expect("TextRun should exist");
+        assert_eq!(text_run.content, Some("Hello, World!".to_string()));
+    }
+
+    // -------------------------------------------------------------------------
+    // API Request Models Tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn create_document_request_serializes_correctly() {
+        // Given: A create document request
+        let request = CreateDocumentRequest {
+            title: "New Document".to_string(),
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_value(&request).unwrap();
+
+        // Then: It should have the title field
+        assert_eq!(json["title"], "New Document");
+    }
+
+    #[test]
+    fn google_docs_request_serializes_insert_text_only() {
+        // Given: A GoogleDocsRequest with only insert_text
+        let request = GoogleDocsRequest {
+            insert_text: Some(InsertTextRequest {
+                text: "Hello".to_string(),
+                location: Location { index: 1 },
+            }),
+            delete_content_range: None,
+            replace_all_text: None,
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_value(&request).unwrap();
+
+        // Then: Only insert_text should be present (skip_serializing_if)
+        assert!(json.get("insertText").is_some());
+        assert!(json.get("deleteContentRange").is_none());
+        assert!(json.get("replaceAllText").is_none());
+    }
+
+    #[test]
+    fn batch_update_request_serializes_with_camel_case() {
+        // Given: A batch update request with multiple operations
+        let request = BatchUpdateRequest {
+            requests: vec![
+                GoogleDocsRequest {
+                    insert_text: Some(InsertTextRequest {
+                        text: "New text".to_string(),
+                        location: Location { index: 1 },
+                    }),
+                    delete_content_range: None,
+                    replace_all_text: None,
+                },
+            ],
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_string(&request).unwrap();
+
+        // Then: Field names should be camelCase for API compatibility
+        assert!(json.contains("insertText"));
+        assert!(!json.contains("insert_text"));
+    }
+
+    #[test]
+    fn replace_all_text_request_serializes_correctly() {
+        // Given: A replace all text request
+        let request = ReplaceAllTextRequest {
+            contains_text: ContainsText {
+                text: "find me".to_string(),
+                match_case: true,
+            },
+            replace_text: "replacement".to_string(),
+        };
+
+        // When: Serializing to JSON
+        let json = serde_json::to_value(&request).unwrap();
+
+        // Then: All fields should be in camelCase
+        assert_eq!(json["containsText"]["text"], "find me");
+        assert_eq!(json["containsText"]["matchCase"], true);
+        assert_eq!(json["replaceText"], "replacement");
+    }
+
+    // -------------------------------------------------------------------------
+    // BatchUpdateResponse Tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn batch_update_response_deserializes_correctly() {
+        // Given: A batch update response from the API
+        let json = r#"{
+            "documentId": "doc123",
+            "replies": [{}]
+        }"#;
+
+        // When: Deserializing the response
+        let response: BatchUpdateResponse = serde_json::from_str(json).unwrap();
+
+        // Then: Fields should be correctly mapped
+        assert_eq!(response.document_id, "doc123");
+        assert_eq!(response.replies.len(), 1);
+    }
+
+    #[test]
+    fn batch_update_response_handles_empty_replies() {
+        // Given: A response without replies field
+        let json = r#"{"documentId": "doc456"}"#;
+
+        // When: Deserializing the response
+        let response: BatchUpdateResponse = serde_json::from_str(json).unwrap();
+
+        // Then: replies should default to empty vector
+        assert_eq!(response.document_id, "doc456");
+        assert!(response.replies.is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // ServiceAccountCredentials Tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn service_account_credentials_deserializes_from_json_key() {
+        // Given: A service account JSON key file content
+        let json = r#"{
+            "type": "service_account",
+            "project_id": "my-project",
+            "private_key_id": "key123",
+            "private_key": "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n",
+            "client_email": "test@my-project.iam.gserviceaccount.com",
+            "client_id": "123456789",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }"#;
+
+        // When: Deserializing the credentials
+        let creds: ServiceAccountCredentials = serde_json::from_str(json).unwrap();
+
+        // Then: All fields should be correctly mapped
+        assert_eq!(creds.credential_type, "service_account");
+        assert_eq!(creds.project_id, "my-project");
+        assert_eq!(creds.private_key_id, "key123");
+        assert_eq!(
+            creds.client_email,
+            "test@my-project.iam.gserviceaccount.com"
+        );
+        assert_eq!(creds.client_id, "123456789");
+    }
+
+    // -------------------------------------------------------------------------
+    // TokenResponse Tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn token_response_deserializes_correctly() {
+        // Given: An OAuth2 token response
+        let json = r#"{
+            "access_token": "ya29.abc123",
+            "token_type": "Bearer",
+            "expires_in": 3600
+        }"#;
+
+        // When: Deserializing the response
+        let token: TokenResponse = serde_json::from_str(json).unwrap();
+
+        // Then: All fields should be correctly mapped
+        assert_eq!(token.access_token, "ya29.abc123");
+        assert_eq!(token.token_type, "Bearer");
+        assert_eq!(token.expires_in, 3600);
+    }
+}
