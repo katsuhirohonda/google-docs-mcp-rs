@@ -144,7 +144,59 @@ impl GoogleDocsMcpServer {
     }
 
     /// Update a Google Document with various operations.
-    #[tool(description = "Update a Google Document. Supports inserting text at a position, deleting a range of content, and replacing all occurrences of text.")]
+    #[tool(description = r#"Update a Google Document with batch operations.
+
+## Supported Operations
+
+### 1. insertText
+Insert text at a specific position in the document.
+- `text` (string, required): The text to insert
+- `index` (integer, required): Position to insert at (1 = beginning of document body)
+
+### 2. deleteContentRange
+Delete content within a specified range.
+- `startIndex` (integer, required): Start position of the range to delete
+- `endIndex` (integer, required): End position of the range to delete
+
+### 3. replaceAllText
+Replace all occurrences of a text string.
+- `findText` (string, required): The text to search for
+- `replaceText` (string, required): The replacement text
+- `matchCase` (boolean, optional): Whether to match case (default: false)
+
+## Example Request
+
+```json
+{
+  "document_id": "your-document-id",
+  "requests": [
+    {
+      "insertText": {
+        "text": "Hello, World!",
+        "index": 1
+      }
+    },
+    {
+      "deleteContentRange": {
+        "startIndex": 10,
+        "endIndex": 20
+      }
+    },
+    {
+      "replaceAllText": {
+        "findText": "old text",
+        "replaceText": "new text",
+        "matchCase": true
+      }
+    }
+  ]
+}
+```
+
+## Notes
+- Index 1 is the beginning of the document body
+- To append text at the end, first get the document to find the last index
+- Operations are applied in order"#)]
     async fn google_docs_update_document(
         &self,
         Parameters(params): Parameters<UpdateDocumentParams>,
