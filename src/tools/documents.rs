@@ -58,7 +58,7 @@ impl GoogleDocsMcpServer {
     }
 
     /// Get a Google Document by its ID.
-    #[tool(description = "Get a Google Document by its ID. Returns the document title and full text content.")]
+    #[tool(description = "Get a Google Document by its ID. Returns the document title and full text content from all tabs (including nested child tabs).")]
     async fn google_docs_get_document(
         &self,
         Parameters(params): Parameters<GetDocumentParams>,
@@ -256,25 +256,59 @@ fn convert_requests(requests: &[DocumentRequest]) -> Result<Vec<GoogleDocsReques
         .collect()
 }
 
-/// Extract plain text content from a document
-fn extract_text_content(document: &Document) -> String {
+/// Extract plain text content from a document body
+fn extract_text_from_body(body: &crate::models::DocumentBody) -> String {
     let mut text = String::new();
-
-    if let Some(ref body) = document.body {
-        for element in &body.content {
-            if let Some(ref paragraph) = element.paragraph {
-                for para_element in &paragraph.elements {
-                    if let Some(ref text_run) = para_element.text_run {
-                        if let Some(ref content) = text_run.content {
-                            text.push_str(content);
-                        }
+    for element in &body.content {
+        if let Some(ref paragraph) = element.paragraph {
+            for para_element in &paragraph.elements {
+                if let Some(ref text_run) = para_element.text_run {
+                    if let Some(ref content) = text_run.content {
+                        text.push_str(content);
                     }
                 }
             }
         }
     }
+    text
+}
+
+/// Extract plain text content from a tab (including nested child tabs)
+fn extract_text_from_tab(tab: &crate::models::Tab) -> String {
+    let mut text = String::new();
+
+    // Extract content from this tab's document_tab
+    if let Some(ref doc_tab) = tab.document_tab {
+        if let Some(ref body) = doc_tab.body {
+            text.push_str(&extract_text_from_body(body));
+        }
+    }
+
+    // Recursively extract content from child tabs
+    for child_tab in &tab.child_tabs {
+        text.push_str(&extract_text_from_tab(child_tab));
+    }
 
     text
+}
+
+/// Extract plain text content from a document
+fn extract_text_content(document: &Document) -> String {
+    // If tabs are present (includeTabsContent=true), extract from tabs
+    if !document.tabs.is_empty() {
+        let mut text = String::new();
+        for tab in &document.tabs {
+            text.push_str(&extract_text_from_tab(tab));
+        }
+        return text;
+    }
+
+    // Fallback: extract from body (for documents without tabs or when includeTabsContent=false)
+    if let Some(ref body) = document.body {
+        return extract_text_from_body(body);
+    }
+
+    String::new()
 }
 
 /// Format get document response

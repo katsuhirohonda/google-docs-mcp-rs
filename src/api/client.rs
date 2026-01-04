@@ -166,9 +166,14 @@ impl GoogleDocsClient {
     pub async fn get_document(&self, document_id: &str) -> Result<Document, McpError> {
         let token = self.get_access_token().await?;
 
+        // Request document with tabs content structure (newer Google Docs format).
+        // This returns content organized by tabs instead of a single body.
         let response = self
             .client
-            .get(format!("{}/documents/{}", GOOGLE_DOCS_API_URL, document_id))
+            .get(format!(
+                "{}/documents/{}?includeTabsContent=true",
+                GOOGLE_DOCS_API_URL, document_id
+            ))
             .header("Authorization", format!("Bearer {}", token))
             .send()
             .await

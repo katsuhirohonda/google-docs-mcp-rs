@@ -60,13 +60,60 @@ pub struct Document {
     /// The document title
     pub title: String,
 
-    /// The document body
+    /// The document body (may be empty when tabs are used; content is in tabs instead)
     #[serde(default)]
     pub body: Option<DocumentBody>,
+
+    /// The tabs in the document (populated when includeTabsContent=true)
+    #[serde(default)]
+    pub tabs: Vec<Tab>,
 
     /// The revision ID of the document
     #[serde(default)]
     pub revision_id: Option<String>,
+}
+
+/// A tab in a Google Document
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tab {
+    /// Properties of the tab
+    #[serde(default)]
+    pub tab_properties: Option<TabProperties>,
+
+    /// The document content within this tab
+    #[serde(default)]
+    pub document_tab: Option<DocumentTab>,
+
+    /// Child tabs nested under this tab
+    #[serde(default)]
+    pub child_tabs: Vec<Tab>,
+}
+
+/// Properties of a tab
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TabProperties {
+    /// The ID of the tab
+    #[serde(default)]
+    pub tab_id: Option<String>,
+
+    /// The title of the tab
+    #[serde(default)]
+    pub title: Option<String>,
+
+    /// The index of the tab
+    #[serde(default)]
+    pub index: Option<i32>,
+}
+
+/// The document content within a tab
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentTab {
+    /// The body content of the tab
+    #[serde(default)]
+    pub body: Option<DocumentBody>,
 }
 
 /// Document body structure
@@ -464,6 +511,155 @@ mod tests {
             .as_ref()
             .expect("TextRun should exist");
         assert_eq!(text_run.content, Some("Hello, World!".to_string()));
+    }
+
+    #[test]
+    fn document_deserializes_with_tabs_content() {
+        // Given: A document with tabs (includeTabsContent=true response)
+        let json = r#"{
+            "documentId": "doc456",
+            "title": "Doc with Tabs",
+            "tabs": [
+                {
+                    "tabProperties": {
+                        "tabId": "tab1",
+                        "title": "First Tab",
+                        "index": 0
+                    },
+                    "documentTab": {
+                        "body": {
+                            "content": [
+                                {
+                                    "startIndex": 1,
+                                    "endIndex": 20,
+                                    "paragraph": {
+                                        "elements": [
+                                            {
+                                                "textRun": {
+                                                    "content": "Content in tab 1"
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "childTabs": []
+                },
+                {
+                    "tabProperties": {
+                        "tabId": "tab2",
+                        "title": "Second Tab",
+                        "index": 1
+                    },
+                    "documentTab": {
+                        "body": {
+                            "content": [
+                                {
+                                    "paragraph": {
+                                        "elements": [
+                                            {
+                                                "textRun": {
+                                                    "content": "Content in tab 2"
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "childTabs": []
+                }
+            ]
+        }"#;
+
+        // When: Deserializing the document
+        let doc: Document = serde_json::from_str(json).unwrap();
+
+        // Then: Tabs should be correctly parsed
+        assert_eq!(doc.document_id, "doc456");
+        assert_eq!(doc.title, "Doc with Tabs");
+        assert_eq!(doc.tabs.len(), 2);
+
+        // Verify first tab
+        let tab1 = &doc.tabs[0];
+        let tab1_props = tab1.tab_properties.as_ref().expect("Tab properties should exist");
+        assert_eq!(tab1_props.tab_id, Some("tab1".to_string()));
+        assert_eq!(tab1_props.title, Some("First Tab".to_string()));
+        assert_eq!(tab1_props.index, Some(0));
+
+        let doc_tab1 = tab1.document_tab.as_ref().expect("DocumentTab should exist");
+        let body1 = doc_tab1.body.as_ref().expect("Body should exist");
+        assert_eq!(body1.content.len(), 1);
+
+        // Verify second tab
+        let tab2 = &doc.tabs[1];
+        let tab2_props = tab2.tab_properties.as_ref().expect("Tab properties should exist");
+        assert_eq!(tab2_props.tab_id, Some("tab2".to_string()));
+        assert_eq!(tab2_props.title, Some("Second Tab".to_string()));
+    }
+
+    #[test]
+    fn document_deserializes_with_nested_child_tabs() {
+        // Given: A document with nested child tabs
+        let json = r#"{
+            "documentId": "doc789",
+            "title": "Doc with Nested Tabs",
+            "tabs": [
+                {
+                    "tabProperties": {
+                        "tabId": "parent",
+                        "title": "Parent Tab"
+                    },
+                    "documentTab": {
+                        "body": {
+                            "content": []
+                        }
+                    },
+                    "childTabs": [
+                        {
+                            "tabProperties": {
+                                "tabId": "child1",
+                                "title": "Child Tab 1"
+                            },
+                            "documentTab": {
+                                "body": {
+                                    "content": [
+                                        {
+                                            "paragraph": {
+                                                "elements": [
+                                                    {
+                                                        "textRun": {
+                                                            "content": "Child content"
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            "childTabs": []
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        // When: Deserializing the document
+        let doc: Document = serde_json::from_str(json).unwrap();
+
+        // Then: Nested tabs should be correctly parsed
+        assert_eq!(doc.tabs.len(), 1);
+        let parent_tab = &doc.tabs[0];
+        assert_eq!(parent_tab.child_tabs.len(), 1);
+
+        let child_tab = &parent_tab.child_tabs[0];
+        let child_props = child_tab.tab_properties.as_ref().unwrap();
+        assert_eq!(child_props.tab_id, Some("child1".to_string()));
+        assert_eq!(child_props.title, Some("Child Tab 1".to_string()));
     }
 
     // -------------------------------------------------------------------------
