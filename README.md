@@ -13,8 +13,9 @@ A Rust-based Model Context Protocol (MCP) server for Google Docs API integration
 
 1. A Google Cloud Project
 2. Google Docs API enabled
-3. A Service Account with appropriate permissions
-4. Service Account JSON key file
+3. Google Drive API enabled (required for creating documents in specific folders)
+4. A Service Account with appropriate permissions
+5. Service Account JSON key file
 
 ## Setup
 
