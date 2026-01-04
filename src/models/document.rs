@@ -14,7 +14,7 @@ pub enum ResponseFormat {
 
 /// A single update request for a document
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum DocumentRequest {
     /// Insert text at a specific location
     InsertText {
@@ -26,18 +26,22 @@ pub enum DocumentRequest {
     /// Delete content in a range
     DeleteContentRange {
         /// Start index of the range to delete
+        #[serde(rename = "startIndex")]
         start_index: i32,
         /// End index of the range to delete
+        #[serde(rename = "endIndex")]
         end_index: i32,
     },
     /// Replace all occurrences of text
     ReplaceAllText {
         /// The text to find
+        #[serde(rename = "findText")]
         find_text: String,
         /// The text to replace with
+        #[serde(rename = "replaceText")]
         replace_text: String,
         /// Whether to match case
-        #[serde(default)]
+        #[serde(default, rename = "matchCase")]
         match_case: bool,
     },
 }
@@ -343,9 +347,9 @@ mod tests {
         // When: Serializing to JSON
         let json = serde_json::to_value(&request).unwrap();
 
-        // Then: It should have snake_case format with correct fields
-        assert_eq!(json["insert_text"]["text"], "Hello, World!");
-        assert_eq!(json["insert_text"]["index"], 1);
+        // Then: It should have camelCase format with correct fields
+        assert_eq!(json["insertText"]["text"], "Hello, World!");
+        assert_eq!(json["insertText"]["index"], 1);
     }
 
     #[test]
@@ -359,9 +363,9 @@ mod tests {
         // When: Serializing to JSON
         let json = serde_json::to_value(&request).unwrap();
 
-        // Then: It should have correct range fields
-        assert_eq!(json["delete_content_range"]["start_index"], 5);
-        assert_eq!(json["delete_content_range"]["end_index"], 10);
+        // Then: It should have camelCase format with correct range fields
+        assert_eq!(json["deleteContentRange"]["startIndex"], 5);
+        assert_eq!(json["deleteContentRange"]["endIndex"], 10);
     }
 
     #[test]
@@ -376,16 +380,16 @@ mod tests {
         // When: Serializing to JSON
         let json = serde_json::to_value(&request).unwrap();
 
-        // Then: It should have all fields including match_case
-        assert_eq!(json["replace_all_text"]["find_text"], "old");
-        assert_eq!(json["replace_all_text"]["replace_text"], "new");
-        assert_eq!(json["replace_all_text"]["match_case"], true);
+        // Then: It should have camelCase format with all fields including matchCase
+        assert_eq!(json["replaceAllText"]["findText"], "old");
+        assert_eq!(json["replaceAllText"]["replaceText"], "new");
+        assert_eq!(json["replaceAllText"]["matchCase"], true);
     }
 
     #[test]
     fn document_request_replace_all_text_defaults_match_case_to_false() {
-        // Given: JSON without match_case field
-        let json = r#"{"replace_all_text":{"find_text":"old","replace_text":"new"}}"#;
+        // Given: JSON without matchCase field (camelCase format)
+        let json = r#"{"replaceAllText":{"findText":"old","replaceText":"new"}}"#;
 
         // When: Deserializing the request
         let request: DocumentRequest = serde_json::from_str(json).unwrap();
